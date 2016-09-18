@@ -14,7 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"regexp"
+	//"regexp"
 	"strconv"
 	"strings"
 	"sort"
@@ -355,19 +355,36 @@ func htmlify(w http.ResponseWriter, r *http.Request, content string) string {
 	//for _, entry := range entries {
 	//	keywords = append(keywords, regexp.QuoteMeta(entry.Keyword))
 	//}
-	re := regexp.MustCompile("(" + strings.Join(keywords, "|") + ")")
-	kw2sha := make(map[string]string)
-	content = re.ReplaceAllStringFunc(content, func(kw string) string {
-		kw2sha[kw] = "isuda_" + fmt.Sprintf("%x", sha1.Sum([]byte(kw)))
-		return kw2sha[kw]
-	})
 	content = html.EscapeString(content)
-	for kw, hash := range kw2sha {
-		u, err := r.URL.Parse(baseUrl.String() + "/keyword/" + pathURIEscape(kw))
-		panicIf(err)
-		link := fmt.Sprintf("<a href=\"%s\">%s</a>", u, html.EscapeString(kw))
-		content = strings.Replace(content, hash, link, -1)
+	content = strings.Replace(content, "@", "@ @", -1)
+	kw := make([]string, 0)
+	for _, k := range keywords {
+		//tmp := strings.Replace(content, k, fmt.Sprintf(`<a href="%s">%s</a>`, url, html.EscapeString(k)), -1)
+		tmp := strings.Replace(content, k, "@" + strconv.Itoa(len(kw)), -1)
+		if tmp != content {
+			kw = append(kw, k)
+			content = tmp
+		}
 	}
+	for i, k := range kw {
+		url, _ := r.URL.Parse(baseUrl.String() + "/keyword/" + pathURIEscape(k))
+		link := "<a href=\"" + url.String() + "\">" + html.EscapeString(k) + "</a>"
+		content = strings.Replace(content, "@" + strconv.Itoa(i), link, -1)
+	}
+	//re := regexp.MustCompile("(" + strings.Join(keywords, "|") + ")")
+	//kw2sha := make(map[string]string)
+	//content = re.ReplaceAllStringFunc(content, func(kw string) string {
+	//	kw2sha[kw] = "isuda_" + fmt.Sprintf("%x", sha1.Sum([]byte(kw)))
+	//	return kw2sha[kw]
+	//})
+	//content = html.EscapeString(content)
+	//for kw, hash := range kw2sha {
+	//	u, err := r.URL.Parse(baseUrl.String() + "/keyword/" + pathURIEscape(kw))
+	//	panicIf(err)
+	//	link := fmt.Sprintf("<a href=\"%s\">%s</a>", u, html.EscapeString(kw))
+	//	content = strings.Replace(content, hash, link, -1)
+	//}
+	content = strings.Replace(content, "@ @", "@", -1)
 	return strings.Replace(content, "\n", "<br />\n", -1)
 }
 

@@ -36,3 +36,19 @@ type EntryWithCtx struct {
 	Context context.Context
 	Entry   Entry
 }
+
+type Keywords struct {
+	Contents []string
+}
+
+func (k Keywords) Less(i, j int) bool {
+	return len(k.Contents[i]) > len(k.Contents[j])
+}
+
+func (k Keywords) Len() int {
+	return len(k.Contents)
+}
+
+func (k Keywords) Swap(i, j int) {
+	k.Contents[i], k.Contents[j] = k.Contents[j], k.Contents[i]
+}
