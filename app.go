@@ -292,16 +292,11 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 
 func loginPostHandler(w http.ResponseWriter, r *http.Request) {
 	name := r.FormValue("name")
-	//row := db.QueryRow(`SELECT * FROM user WHERE name = ?`, name)
-	//user := User{}
-	//err := row.Scan(&user.ID, &user.Name, &user.Salt, &user.Password, &user.CreatedAt)
-	//if err == sql.ErrNoRows || user.Password != fmt.Sprintf("%x", sha1.Sum([]byte(user.Salt+r.FormValue("password")))) {
 	user := allUsers[name]
 	if user == nil || user.Password != fmt.Sprintf("%x", sha1.Sum([]byte(user.Salt+r.FormValue("password")))) {
 		forbidden(w)
 		return
 	}
-	//panicIf(err)
 	session := getSession(w, r)
 	session.Values["user_id"] = user.ID
 	session.Save(r, w)
