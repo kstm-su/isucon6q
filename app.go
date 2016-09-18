@@ -107,8 +107,7 @@ func starsPostHandler(w http.ResponseWriter, r *http.Request) {
         _, err = db.Exec(`INSERT INTO star (keyword, user_name, created_at) VALUES (?, ?, NOW())`, keyword, user)
         panicIf(err)
 
-        re.JSON(w, http.StatusOK, map[string]string{"result": "1"})
-//        re.JSON(w, http.StatusOK, map[string]string{"result": "ok"})
+        re.JSON(w, http.StatusOK, map[string]string{"result": "ok"})
 }
 
 func setName(w http.ResponseWriter, r *http.Request) error {
