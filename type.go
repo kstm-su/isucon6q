@@ -15,6 +15,7 @@ type Entry struct {
 
 	Html  string
 	Stars []*Star
+	HTMLVersion int
 }
 
 type User struct {

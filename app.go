@@ -47,6 +47,7 @@ var (
 	keywordEntries map[string]*Entry
 	keywords []string
 	allStars map[string][]*Star
+	htmlVersion int
 )
 
 //star関連
@@ -140,6 +141,7 @@ func load() {
 		e := Entry{}
 		err := rows.Scan(&e.ID, &e.AuthorID, &e.Keyword, &e.Description, &e.UpdatedAt, &e.CreatedAt)
 		panicIf(err)
+		e.HTMLVersion = -1
 		e.Stars = make([]*Star, 0)
 		allEntries = append(allEntries, &e)
 		keywordEntries[e.Keyword] = &e
@@ -163,6 +165,7 @@ func load() {
 }
 
 func initializeHandler(w http.ResponseWriter, r *http.Request) {
+	htmlVersion = 0
 	_, err := db.Exec(`DELETE FROM entry WHERE id > 7101`)
 	panicIf(err)
 
@@ -189,7 +192,11 @@ func topHandler(w http.ResponseWriter, r *http.Request) {
 	entries := allEntries[perPage*(page-1) : perPage*page]
 	for _, e := range entries {
 		e.Stars = loadStars(e.Keyword)
-		e.Html = htmlify(w, r, e.Description)
+		//e.Html = htmlify(w, r, e.Description)
+		if e.HTMLVersion != htmlVersion {
+			e.Html = htmlify(e.Description)
+			e.HTMLVersion = htmlVersion
+		}
 	}
 
 	totalEntries := len(allEntries)
@@ -263,6 +270,7 @@ func keywordPostHandler(w http.ResponseWriter, r *http.Request) {
 	keywords = append(keywords, keyword)
 	allStars[keyword] = make([]*Star, 0)
 	sort.Sort(Keywords{keywords})
+	htmlVersion++
 	panicIf(err)
 	http.Redirect(w, r, "/", http.StatusFound)
 }
@@ -364,7 +372,11 @@ func keywordByKeywordHandler(w http.ResponseWriter, r *http.Request) {
 		notFound(w)
 		return
 	}
-	e.Html = htmlify(w, r, e.Description)
+	//e.Html = htmlify(w, r, e.Description)
+	if e.HTMLVersion != htmlVersion {
+		e.Html = htmlify(e.Description)
+		e.HTMLVersion = htmlVersion
+	}
 	e.Stars = loadStars(e.Keyword)
 
 	re.HTML(w, http.StatusOK, "keyword", struct {
@@ -412,7 +424,8 @@ func keywordByKeywordDeleteHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
-func htmlify(w http.ResponseWriter, r *http.Request, content string) string {
+//func htmlify(w http.ResponseWriter, r *http.Request, content string) string {
+func htmlify(content string) string {
 	if content == "" {
 		return ""
 	}
@@ -428,8 +441,10 @@ func htmlify(w http.ResponseWriter, r *http.Request, content string) string {
 	}
 	for i := len(kw) - 1; i >= 0; i-- {
 		k := kw[i]
-		url, _ := r.URL.Parse(baseUrl.String() + "/keyword/" + pathURIEscape(k))
-		link := "<a href=\"" + url.String() + "\">" + html.EscapeString(k) + "</a>"
+		//url, _ := r.URL.Parse(baseUrl.String() + "/keyword/" + pathURIEscape(k))
+		url := "http://13.78.126.110/keyword/" + pathURIEscape(k)
+		//link := "<a href=\"" + url.String() + "\">" + html.EscapeString(k) + "</a>"
+		link := "<a href=\"" + url + "\">" + html.EscapeString(k) + "</a>"
 		content = strings.Replace(content, "@(" + strconv.Itoa(i) + ")", link, -1)
 	}
 	content = strings.Replace(content, "@@", "@", -1)
