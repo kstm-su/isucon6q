@@ -40,9 +40,6 @@ var (
 	store   *sessions.CookieStore
 
 	errInvalidUser = errors.New("Invalid User")
-
-	//allUsers map[string]*User
-	allEntries []*Entry
 )
 
 func setName(w http.ResponseWriter, r *http.Request) error {
@@ -80,17 +77,6 @@ func initializeHandler(w http.ResponseWriter, r *http.Request) {
 	panicIf(err)
 	defer resp.Body.Close()
 
-	rows, _ := db.Query("SELECT * FROM entry ORDER BY updated_at")
-	allEntries := make([]*Entry, 0)
-	for rows.Next() {
-		e := Entry{}
-		err := rows.Scan(&e.ID, &e.AuthorID, &e.Keyword, &e.Description, &e.UpdatedAt, &e.CreatedAt)
-		panicIf(err)
-		e.Html = htmlify(w, r, e.Description)
-		e.Stars = loadStars(e.Keyword)
-		allEntries = append(allEntries, &e)
-	}
-
 	re.JSON(w, http.StatusOK, map[string]string{"result": "ok"})
 }
 
@@ -107,24 +93,23 @@ func topHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	page, _ := strconv.Atoi(p)
 
-	//rows, err := db.Query(fmt.Sprintf(
-	//	"SELECT * FROM entry ORDER BY updated_at DESC LIMIT %d OFFSET %d",
-	//	perPage, perPage*(page-1),
-	//))
-	//if err != nil && err != sql.ErrNoRows {
-	//	panicIf(err)
-	//}
-	//entries := make([]*Entry, 0, 10)
-	//for rows.Next() {
-	//	e := Entry{}
-	//	err := rows.Scan(&e.ID, &e.AuthorID, &e.Keyword, &e.Description, &e.UpdatedAt, &e.CreatedAt)
-	//	panicIf(err)
-	//	e.Html = htmlify(w, r, e.Description)
-	//	e.Stars = loadStars(e.Keyword)
-	//	entries = append(entries, &e)
-	//}
-	//rows.Close()
-	entries := allEntries[perPage*(page-1) : perPage*page]
+	rows, err := db.Query(fmt.Sprintf(
+		"SELECT * FROM entry ORDER BY updated_at DESC LIMIT %d OFFSET %d",
+		perPage, perPage*(page-1),
+	))
+	if err != nil && err != sql.ErrNoRows {
+		panicIf(err)
+	}
+	entries := make([]*Entry, 0, 10)
+	for rows.Next() {
+		e := Entry{}
+		err := rows.Scan(&e.ID, &e.AuthorID, &e.Keyword, &e.Description, &e.UpdatedAt, &e.CreatedAt)
+		panicIf(err)
+		e.Html = htmlify(w, r, e.Description)
+		e.Stars = loadStars(e.Keyword)
+		entries = append(entries, &e)
+	}
+	rows.Close()
 
 	var totalEntries int
 	row := db.QueryRow(`SELECT COUNT(*) FROM entry`)
