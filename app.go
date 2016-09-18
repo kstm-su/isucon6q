@@ -53,22 +53,6 @@ var (
 func starsHandler2(keyword string)[]*Star {
 	res := allStars[keyword]
 	return res
-//		
-//        rows, err := db.Query(`SELECT * FROM star WHERE keyword = ?`, keyword)
-//        if err != nil && err != sql.ErrNoRows {
-//                panicIf(err)
-//                return make([]*Star, 0);
-//        }
-//
-//        stars := make([]*Star, 0, 10)
-//        for rows.Next() {
-//                s := Star{}
-//                err := rows.Scan(&s.ID, &s.Keyword, &s.UserName, &s.CreatedAt)
-//                panicIf(err)
-//                stars = append(stars, &s)
-//        }
-//        rows.Close()
-//	return stars
 }
 
 func starsHandler(w http.ResponseWriter, r *http.Request) {
@@ -132,10 +116,6 @@ func initializeHandler(w http.ResponseWriter, r *http.Request) {
 	_, err := db.Exec(`DELETE FROM entry WHERE id > 7101`)
 	panicIf(err)
 
-//	resp, err := http.Get(fmt.Sprintf("%s/initialize", isutarEndpoint))
-//	panicIf(err)
-//	defer resp.Body.Close()
-
 	rows, _ := db.Query("SELECT * FROM entry ORDER BY updated_at")
 	allStars = make(map[string][]*Star)
 	allEntries = make([]*Entry, 0)
@@ -145,8 +125,6 @@ func initializeHandler(w http.ResponseWriter, r *http.Request) {
 		e := Entry{}
 		err := rows.Scan(&e.ID, &e.AuthorID, &e.Keyword, &e.Description, &e.UpdatedAt, &e.CreatedAt)
 		panicIf(err)
-		//e.Html = htmlify(w, r, e.Description)
-		//e.Stars = loadStars(e.Keyword)
 		e.Stars = make([]*Star, 0)
 		allEntries = append(allEntries, &e)
 		keywordEntries[e.Keyword] = &e
@@ -175,18 +153,11 @@ func topHandler(w http.ResponseWriter, r *http.Request) {
 	page, _ := strconv.Atoi(p)
 	entries := allEntries[perPage*(page-1) : perPage*page]
 	for _, e := range entries {
-		//fmt.Printf("%s\n", e.Keyword)
 		e.Stars = loadStars(e.Keyword)
 		e.Html = htmlify(w, r, e.Description)
 	}
 
 	totalEntries := len(allEntries)
-	//var totalEntries int
-	//row := db.QueryRow(`SELECT COUNT(*) FROM entry`)
-	//err := row.Scan(&totalEntries)
-	//if err != nil && err != sql.ErrNoRows {
-	//	panicIf(err)
-	//}
 
 	lastPage := int(math.Ceil(float64(totalEntries) / float64(perPage)))
 	pages := make([]int, 0, 10)
@@ -345,10 +316,6 @@ func keywordByKeywordHandler(w http.ResponseWriter, r *http.Request) {
 	keyword := mux.Vars(r)["keyword"]
 	e := keywordEntries[keyword]
 	if e == nil {
-	//row := db.QueryRow(`SELECT * FROM entry WHERE keyword = ?`, keyword)
-	//e := Entry{}
-	//err := row.Scan(&e.ID, &e.AuthorID, &e.Keyword, &e.Description, &e.UpdatedAt, &e.CreatedAt)
-	//if err == sql.ErrNoRows {
 		notFound(w)
 		return
 	}
@@ -382,7 +349,7 @@ func keywordByKeywordDeleteHandler(w http.ResponseWriter, r *http.Request) {
 		badRequest(w)
 		return
 	}
-	row := db.QueryRow(`SELECT * FROM entry WHERE keyword = ?`, keyword)
+	//row := db.QueryRow(`SELECT * FROM entry WHERE keyword = ?`, keyword)
 	for i, k := range keywords {
 		if k == keyword {
 			copy(keywords[i:], keywords[i+1:])
@@ -390,13 +357,14 @@ func keywordByKeywordDeleteHandler(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
-	e := Entry{}
-	err := row.Scan(&e.ID, &e.AuthorID, &e.Keyword, &e.Description, &e.UpdatedAt, &e.CreatedAt)
-	if err == sql.ErrNoRows {
+	//e := Entry{}
+	//err := row.Scan(&e.ID, &e.AuthorID, &e.Keyword, &e.Description, &e.UpdatedAt, &e.CreatedAt)
+	//if err == sql.ErrNoRows {
+	if keywordEntries[keyword] == nil {
 		notFound(w)
 		return
 	}
-	_, err = db.Exec(`DELETE FROM entry WHERE keyword = ?`, keyword)
+	_, err := db.Exec(`DELETE FROM entry WHERE keyword = ?`, keyword)
 	panicIf(err)
 	http.Redirect(w, r, "/", http.StatusFound)
 }
