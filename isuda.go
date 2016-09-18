@@ -40,6 +40,9 @@ var (
 	store   *sessions.CookieStore
 
 	errInvalidUser = errors.New("Invalid User")
+
+	//allUsers map[string]*User
+	allEntries []*Entry
 )
 
 func setName(w http.ResponseWriter, r *http.Request) error {
@@ -77,6 +80,17 @@ func initializeHandler(w http.ResponseWriter, r *http.Request) {
 	panicIf(err)
 	defer resp.Body.Close()
 
+	rows, _ := db.Query("SELECT * FROM entry ORDER BY updated_at")
+	allEntries := make([]*Entry, 0)
+	for rows.Next() {
+		e := Entry{}
+		err := rows.Scan(&e.ID, &e.AuthorID, &e.Keyword, &e.Description, &e.UpdatedAt, &e.CreatedAt)
+		panicIf(err)
+		e.Html = htmlify(w, r, e.Description)
+		e.Stars = loadStars(e.Keyword)
+		allEntries = append(allEntries, &e)
+	}
+
 	re.JSON(w, http.StatusOK, map[string]string{"result": "ok"})
 }
 
@@ -93,27 +107,28 @@ func topHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	page, _ := strconv.Atoi(p)
 
-	rows, err := db.Query(fmt.Sprintf(
-		"SELECT * FROM entry ORDER BY updated_at DESC LIMIT %d OFFSET %d",
-		perPage, perPage*(page-1),
-	))
-	if err != nil && err != sql.ErrNoRows {
-		panicIf(err)
-	}
-	entries := make([]*Entry, 0, 10)
-	for rows.Next() {
-		e := Entry{}
-		err := rows.Scan(&e.ID, &e.AuthorID, &e.Keyword, &e.Description, &e.UpdatedAt, &e.CreatedAt)
-		panicIf(err)
-		e.Html = htmlify(w, r, e.Description)
-		e.Stars = loadStars(e.Keyword)
-		entries = append(entries, &e)
-	}
-	rows.Close()
+	//rows, err := db.Query(fmt.Sprintf(
+	//	"SELECT * FROM entry ORDER BY updated_at DESC LIMIT %d OFFSET %d",
+	//	perPage, perPage*(page-1),
+	//))
+	//if err != nil && err != sql.ErrNoRows {
+	//	panicIf(err)
+	//}
+	//entries := make([]*Entry, 0, 10)
+	//for rows.Next() {
+	//	e := Entry{}
+	//	err := rows.Scan(&e.ID, &e.AuthorID, &e.Keyword, &e.Description, &e.UpdatedAt, &e.CreatedAt)
+	//	panicIf(err)
+	//	e.Html = htmlify(w, r, e.Description)
+	//	e.Stars = loadStars(e.Keyword)
+	//	entries = append(entries, &e)
+	//}
+	//rows.Close()
+	entries := allEntries[perPage*(page-1) : perPage*page]
 
 	var totalEntries int
 	row := db.QueryRow(`SELECT COUNT(*) FROM entry`)
-	err = row.Scan(&totalEntries)
+	err := row.Scan(&totalEntries)
 	if err != nil && err != sql.ErrNoRows {
 		panicIf(err)
 	}
@@ -325,7 +340,7 @@ func htmlify(w http.ResponseWriter, r *http.Request, content string) string {
 	for _, entry := range entries {
 		keywords = append(keywords, regexp.QuoteMeta(entry.Keyword))
 	}
-	re := regexp.MustCompile("("+strings.Join(keywords, "|")+")")
+	re := regexp.MustCompile("(" + strings.Join(keywords, "|") + ")")
 	kw2sha := make(map[string]string)
 	content = re.ReplaceAllStringFunc(content, func(kw string) string {
 		kw2sha[kw] = "isuda_" + fmt.Sprintf("%x", sha1.Sum([]byte(kw)))
@@ -333,7 +348,7 @@ func htmlify(w http.ResponseWriter, r *http.Request, content string) string {
 	})
 	content = html.EscapeString(content)
 	for kw, hash := range kw2sha {
-		u, err := r.URL.Parse(baseUrl.String()+"/keyword/" + pathURIEscape(kw))
+		u, err := r.URL.Parse(baseUrl.String() + "/keyword/" + pathURIEscape(kw))
 		panicIf(err)
 		link := fmt.Sprintf("<a href=\"%s\">%s</a>", u, html.EscapeString(kw))
 		content = strings.Replace(content, hash, link, -1)
