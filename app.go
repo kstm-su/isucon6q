@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sort"
 
 	"github.com/Songmu/strrand"
 	_ "github.com/go-sql-driver/mysql"
@@ -43,6 +44,8 @@ var (
 
 	//allUsers map[string]*User
 	allEntries []*Entry
+	keywordEntries map[string]*Entry
+	keywords []string
 )
 
 func setName(w http.ResponseWriter, r *http.Request) error {
@@ -82,17 +85,22 @@ func initializeHandler(w http.ResponseWriter, r *http.Request) {
 
 	rows, _ := db.Query("SELECT * FROM entry ORDER BY updated_at")
 	allEntries = make([]*Entry, 0)
+	keywordEntries = make(map[string]*Entry)
+	keywords = make([]string, 0)
 	for rows.Next() {
 		e := Entry{}
 		err := rows.Scan(&e.ID, &e.AuthorID, &e.Keyword, &e.Description, &e.UpdatedAt, &e.CreatedAt)
 		panicIf(err)
 		//e.Html = htmlify(w, r, e.Description)
-		e.Stars = loadStars(e.Keyword)
-		e.Html = e.Description
-		//e.Stars = make([]*Star, 0)
+		//e.Stars = loadStars(e.Keyword)
+		e.Stars = make([]*Star, 0)
 		allEntries = append(allEntries, &e)
+		keywordEntries[e.Keyword] = &e
+		keywords = append(keywords, e.Keyword)
 	}
 	rows.Close()
+	sort.Sort(Keywords{keywords})
+	fmt.Printf("%+v\n", keywords)
 
 	re.JSON(w, http.StatusOK, map[string]string{"result": "ok"})
 }
@@ -128,6 +136,10 @@ func topHandler(w http.ResponseWriter, r *http.Request) {
 	//}
 	//rows.Close()
 	entries := allEntries[perPage*(page-1) : perPage*page]
+	for _, e := range entries {
+		fmt.Printf("%s\n", e.Keyword)
+		e.Html = htmlify(w, r, e.Description)
+	}
 
 	var totalEntries int
 	row := db.QueryRow(`SELECT COUNT(*) FROM entry`)
@@ -326,23 +338,23 @@ func htmlify(w http.ResponseWriter, r *http.Request, content string) string {
 	if content == "" {
 		return ""
 	}
-	rows, err := db.Query(`
-		SELECT * FROM entry ORDER BY CHARACTER_LENGTH(keyword) DESC
-	`)
-	panicIf(err)
-	entries := make([]*Entry, 0, 500)
-	for rows.Next() {
-		e := Entry{}
-		err := rows.Scan(&e.ID, &e.AuthorID, &e.Keyword, &e.Description, &e.UpdatedAt, &e.CreatedAt)
-		panicIf(err)
-		entries = append(entries, &e)
-	}
-	rows.Close()
+	//rows, err := db.Query(`
+	//	SELECT * FROM entry ORDER BY CHARACTER_LENGTH(keyword) DESC
+	//`)
+	//panicIf(err)
+	//entries := make([]*Entry, 0, 500)
+	//for rows.Next() {
+	//	e := Entry{}
+	//	err := rows.Scan(&e.ID, &e.AuthorID, &e.Keyword, &e.Description, &e.UpdatedAt, &e.CreatedAt)
+	//	panicIf(err)
+	//	entries = append(entries, &e)
+	//}
+	//rows.Close()
 
-	keywords := make([]string, 0, 500)
-	for _, entry := range entries {
-		keywords = append(keywords, regexp.QuoteMeta(entry.Keyword))
-	}
+	//keywords := make([]string, 0, 500)
+	//for _, entry := range entries {
+	//	keywords = append(keywords, regexp.QuoteMeta(entry.Keyword))
+	//}
 	re := regexp.MustCompile("(" + strings.Join(keywords, "|") + ")")
 	kw2sha := make(map[string]string)
 	content = re.ReplaceAllStringFunc(content, func(kw string) string {
@@ -422,9 +434,11 @@ func main() {
 	}
 	user := os.Getenv("ISUDA_DB_USER")
 	if user == "" {
-		user = "root"
+		//user = "root"
+		user = "isucon"
 	}
-	password := os.Getenv("ISUDA_DB_PASSWORD")
+	//password := os.Getenv("ISUDA_DB_PASSWORD")
+	password := "isucon"
 	dbname := os.Getenv("ISUDA_DB_NAME")
 	if dbname == "" {
 		dbname = "isuda"
@@ -493,5 +507,5 @@ func main() {
 	k.Methods("POST").HandlerFunc(myHandler(keywordByKeywordDeleteHandler))
 
 	r.PathPrefix("/").Handler(http.FileServer(http.Dir("./public/")))
-	log.Fatal(http.ListenAndServe(":5000", r))
+	log.Fatal(http.ListenAndServe(":5003", r))
 }
