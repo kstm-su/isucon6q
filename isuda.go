@@ -113,7 +113,7 @@ func topHandler(w http.ResponseWriter, r *http.Request) {
 
 	var totalEntries int
 	row := db.QueryRow(`SELECT COUNT(*) FROM entry`)
-	err := row.Scan(&totalEntries)
+	err = row.Scan(&totalEntries)
 	if err != nil && err != sql.ErrNoRows {
 		panicIf(err)
 	}
