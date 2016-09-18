@@ -1,6 +1,7 @@
 package main
 
 import (
+	"time"
 	"context"
 	"crypto/sha1"
 	"database/sql"
@@ -14,9 +15,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
+	"sort"
 
 	"github.com/Songmu/strrand"
 	_ "github.com/go-sql-driver/mysql"
@@ -40,6 +41,11 @@ var (
 	store   *sessions.CookieStore
 
 	errInvalidUser = errors.New("Invalid User")
+
+	//allUsers map[string]*User
+	allEntries []*Entry
+	keywordEntries map[string]*Entry
+	keywords []string
 )
 
 func setName(w http.ResponseWriter, r *http.Request) error {
@@ -77,6 +83,25 @@ func initializeHandler(w http.ResponseWriter, r *http.Request) {
 	panicIf(err)
 	defer resp.Body.Close()
 
+	rows, _ := db.Query("SELECT * FROM entry ORDER BY updated_at")
+	allEntries = make([]*Entry, 0)
+	keywordEntries = make(map[string]*Entry)
+	keywords = make([]string, 0)
+	for rows.Next() {
+		e := Entry{}
+		err := rows.Scan(&e.ID, &e.AuthorID, &e.Keyword, &e.Description, &e.UpdatedAt, &e.CreatedAt)
+		panicIf(err)
+		//e.Html = htmlify(w, r, e.Description)
+		//e.Stars = loadStars(e.Keyword)
+		e.Stars = make([]*Star, 0)
+		allEntries = append(allEntries, &e)
+		keywordEntries[e.Keyword] = &e
+		keywords = append(keywords, e.Keyword)
+	}
+	rows.Close()
+	sort.Sort(Keywords{keywords})
+	//fmt.Printf("%+v\n", keywords)
+
 	re.JSON(w, http.StatusOK, map[string]string{"result": "ok"})
 }
 
@@ -92,31 +117,20 @@ func topHandler(w http.ResponseWriter, r *http.Request) {
 		p = "1"
 	}
 	page, _ := strconv.Atoi(p)
-
-	rows, err := db.Query(fmt.Sprintf(
-		"SELECT * FROM entry ORDER BY updated_at DESC LIMIT %d OFFSET %d",
-		perPage, perPage*(page-1),
-	))
-	if err != nil && err != sql.ErrNoRows {
-		panicIf(err)
-	}
-	entries := make([]*Entry, 0, 10)
-	for rows.Next() {
-		e := Entry{}
-		err := rows.Scan(&e.ID, &e.AuthorID, &e.Keyword, &e.Description, &e.UpdatedAt, &e.CreatedAt)
-		panicIf(err)
-		e.Html = htmlify(w, r, e.Description)
+	entries := allEntries[perPage*(page-1) : perPage*page]
+	for _, e := range entries {
+		//fmt.Printf("%s\n", e.Keyword)
 		e.Stars = loadStars(e.Keyword)
-		entries = append(entries, &e)
+		e.Html = htmlify(w, r, e.Description)
 	}
-	rows.Close()
 
-	var totalEntries int
-	row := db.QueryRow(`SELECT COUNT(*) FROM entry`)
-	err = row.Scan(&totalEntries)
-	if err != nil && err != sql.ErrNoRows {
-		panicIf(err)
-	}
+	totalEntries := len(allEntries)
+	//var totalEntries int
+	//row := db.QueryRow(`SELECT COUNT(*) FROM entry`)
+	//err := row.Scan(&totalEntries)
+	//if err != nil && err != sql.ErrNoRows {
+	//	panicIf(err)
+	//}
 
 	lastPage := int(math.Ceil(float64(totalEntries) / float64(perPage)))
 	pages := make([]int, 0, 10)
@@ -163,12 +177,29 @@ func keywordPostHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "SPAM!", http.StatusBadRequest)
 		return
 	}
-	_, err := db.Exec(`
+	res, err := db.Exec(`
 		INSERT INTO entry (author_id, keyword, description, created_at, updated_at)
 		VALUES (?, ?, ?, NOW(), NOW())
 		ON DUPLICATE KEY UPDATE
 		author_id = ?, keyword = ?, description = ?, updated_at = NOW()
 	`, userID, keyword, description, userID, keyword, description)
+	createdAt := time.Now()
+	if keywordEntries[keyword] != nil {
+		createdAt = keywordEntries[keyword].CreatedAt
+	}
+	id, _ := res.LastInsertId()
+	e := Entry{
+		ID: int(id),
+		AuthorID: userID,
+		Keyword: keyword,
+		Description: description,
+		UpdatedAt: time.Now(),
+		CreatedAt: createdAt,
+	}
+	allEntries = append([]*Entry{&e}, allEntries...)
+	keywordEntries[keyword] = &e
+	keywords = append(keywords, keyword)
+	sort.Sort(Keywords{keywords})
 	panicIf(err)
 	http.Redirect(w, r, "/", http.StatusFound)
 }
@@ -293,6 +324,13 @@ func keywordByKeywordDeleteHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	row := db.QueryRow(`SELECT * FROM entry WHERE keyword = ?`, keyword)
+	for i, k := range keywords {
+		if k == keyword {
+			copy(keywords[i:], keywords[i+1:])
+			keywords = keywords[:len(keywords)-1]
+			break
+		}
+	}
 	e := Entry{}
 	err := row.Scan(&e.ID, &e.AuthorID, &e.Keyword, &e.Description, &e.UpdatedAt, &e.CreatedAt)
 	if err == sql.ErrNoRows {
@@ -308,36 +346,23 @@ func htmlify(w http.ResponseWriter, r *http.Request, content string) string {
 	if content == "" {
 		return ""
 	}
-	rows, err := db.Query(`
-		SELECT * FROM entry ORDER BY CHARACTER_LENGTH(keyword) DESC
-	`)
-	panicIf(err)
-	entries := make([]*Entry, 0, 500)
-	for rows.Next() {
-		e := Entry{}
-		err := rows.Scan(&e.ID, &e.AuthorID, &e.Keyword, &e.Description, &e.UpdatedAt, &e.CreatedAt)
-		panicIf(err)
-		entries = append(entries, &e)
-	}
-	rows.Close()
-
-	keywords := make([]string, 0, 500)
-	for _, entry := range entries {
-		keywords = append(keywords, regexp.QuoteMeta(entry.Keyword))
-	}
-	re := regexp.MustCompile("(" + strings.Join(keywords, "|") + ")")
-	kw2sha := make(map[string]string)
-	content = re.ReplaceAllStringFunc(content, func(kw string) string {
-		kw2sha[kw] = "isuda_" + fmt.Sprintf("%x", sha1.Sum([]byte(kw)))
-		return kw2sha[kw]
-	})
 	content = html.EscapeString(content)
-	for kw, hash := range kw2sha {
-		u, err := r.URL.Parse(baseUrl.String() + "/keyword/" + pathURIEscape(kw))
-		panicIf(err)
-		link := fmt.Sprintf("<a href=\"%s\">%s</a>", u, html.EscapeString(kw))
-		content = strings.Replace(content, hash, link, -1)
+	content = strings.Replace(content, "@", "@@", -1)
+	kw := make([]string, 0)
+	for _, k := range keywords {
+		tmp := strings.Replace(content, k, "@(" + strconv.Itoa(len(kw)) + ")", -1)
+		if tmp != content {
+			kw = append(kw, k)
+			content = tmp
+		}
 	}
+	for i := len(kw) - 1; i >= 0; i-- {
+		k := kw[i]
+		url, _ := r.URL.Parse(baseUrl.String() + "/keyword/" + pathURIEscape(k))
+		link := "<a href=\"" + url.String() + "\">" + html.EscapeString(k) + "</a>"
+		content = strings.Replace(content, "@(" + strconv.Itoa(i) + ")", link, -1)
+	}
+	content = strings.Replace(content, "@@", "@", -1)
 	return strings.Replace(content, "\n", "<br />\n", -1)
 }
 
@@ -404,9 +429,11 @@ func main() {
 	}
 	user := os.Getenv("ISUDA_DB_USER")
 	if user == "" {
-		user = "root"
+		//user = "root"
+		user = "isucon"
 	}
-	password := os.Getenv("ISUDA_DB_PASSWORD")
+	//password := os.Getenv("ISUDA_DB_PASSWORD")
+	password := "isucon"
 	dbname := os.Getenv("ISUDA_DB_NAME")
 	if dbname == "" {
 		dbname = "isuda"
