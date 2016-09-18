@@ -92,15 +92,15 @@ func initializeHandler(w http.ResponseWriter, r *http.Request) {
 		err := rows.Scan(&e.ID, &e.AuthorID, &e.Keyword, &e.Description, &e.UpdatedAt, &e.CreatedAt)
 		panicIf(err)
 		//e.Html = htmlify(w, r, e.Description)
-		e.Stars = loadStars(e.Keyword)
-		//e.Stars = make([]*Star, 0)
+		//e.Stars = loadStars(e.Keyword)
+		e.Stars = make([]*Star, 0)
 		allEntries = append(allEntries, &e)
 		keywordEntries[e.Keyword] = &e
 		keywords = append(keywords, e.Keyword)
 	}
 	rows.Close()
 	sort.Sort(Keywords{keywords})
-	fmt.Printf("%+v\n", keywords)
+	//fmt.Printf("%+v\n", keywords)
 
 	re.JSON(w, http.StatusOK, map[string]string{"result": "ok"})
 }
@@ -119,7 +119,7 @@ func topHandler(w http.ResponseWriter, r *http.Request) {
 	page, _ := strconv.Atoi(p)
 	entries := allEntries[perPage*(page-1) : perPage*page]
 	for _, e := range entries {
-		fmt.Printf("%s\n", e.Keyword)
+		//fmt.Printf("%s\n", e.Keyword)
 		e.Stars = loadStars(e.Keyword)
 		e.Html = htmlify(w, r, e.Description)
 	}
@@ -347,10 +347,10 @@ func htmlify(w http.ResponseWriter, r *http.Request, content string) string {
 		return ""
 	}
 	content = html.EscapeString(content)
-	content = strings.Replace(content, "@", "@ @", -1)
+	content = strings.Replace(content, "@", "@@", -1)
 	kw := make([]string, 0)
 	for _, k := range keywords {
-		tmp := strings.Replace(content, k, "@" + strconv.Itoa(len(kw)), -1)
+		tmp := strings.Replace(content, k, "@(" + strconv.Itoa(len(kw)) + ")", -1)
 		if tmp != content {
 			kw = append(kw, k)
 			content = tmp
@@ -360,9 +360,9 @@ func htmlify(w http.ResponseWriter, r *http.Request, content string) string {
 		k := kw[i]
 		url, _ := r.URL.Parse(baseUrl.String() + "/keyword/" + pathURIEscape(k))
 		link := "<a href=\"" + url.String() + "\">" + html.EscapeString(k) + "</a>"
-		content = strings.Replace(content, "@" + strconv.Itoa(i), link, -1)
+		content = strings.Replace(content, "@(" + strconv.Itoa(i) + ")", link, -1)
 	}
-	content = strings.Replace(content, "@ @", "@", -1)
+	content = strings.Replace(content, "@@", "@", -1)
 	return strings.Replace(content, "\n", "<br />\n", -1)
 }
 
