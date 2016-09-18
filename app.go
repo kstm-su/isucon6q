@@ -42,7 +42,7 @@ var (
 
 	errInvalidUser = errors.New("Invalid User")
 
-	//allUsers map[string]*User
+	allUsers map[string]*User
 	allEntries []*Entry
 	keywordEntries map[string]*Entry
 	keywords []string
@@ -92,14 +92,23 @@ func setName(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 	setContext(r, "user_id", userID)
-	row := db.QueryRow(`SELECT name FROM user WHERE id = ?`, userID)
-	user := User{}
-	err := row.Scan(&user.Name)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return errInvalidUser
+	//row := db.QueryRow(`SELECT name FROM user WHERE id = ?`, userID)
+	//user := User{}
+	//err := row.Scan(&user.Name)
+	//if err != nil {
+	//	if err == sql.ErrNoRows {
+	//		return errInvalidUser
+	//	}
+	//	panicIf(err)
+	//}
+	var user *User = nil
+	for _, u := range allUsers {
+		if u.ID == userID {
+			user = u
 		}
-		panicIf(err)
+	}
+	if user == nil {
+		return errInvalidUser
 	}
 	setContext(r, "user_name", user.Name)
 	return nil
@@ -112,12 +121,18 @@ func authenticate(w http.ResponseWriter, r *http.Request) error {
 	return errInvalidUser
 }
 
-func initializeHandler(w http.ResponseWriter, r *http.Request) {
-	_, err := db.Exec(`DELETE FROM entry WHERE id > 7101`)
-	panicIf(err)
+func load() {
+	allUsers = make(map[string]*User)
+	rows, _ := db.Query("SELECT * FROM user")
+	for rows.Next() {
+		u := User{}
+		err := rows.Scan(&u.ID, &u.Name, &u.Salt, &u.Password, &u.CreatedAt)
+		panicIf(err)
+		allUsers[u.Name] = &u
+	}
+	rows.Close()
 
-	rows, _ := db.Query("SELECT * FROM entry ORDER BY updated_at")
-	allStars = make(map[string][]*Star)
+	rows, _ = db.Query("SELECT * FROM entry ORDER BY updated_at")
 	allEntries = make([]*Entry, 0)
 	keywordEntries = make(map[string]*Entry)
 	keywords = make([]string, 0)
@@ -132,6 +147,26 @@ func initializeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	rows.Close()
 	sort.Sort(Keywords{keywords})
+
+	allStars = make(map[string][]*Star)
+	rows, _ = db.Query("SELECT * FROM star")
+	for rows.Next() {
+		s := Star{}
+		err := rows.Scan(&s.ID, &s.Keyword, &s.UserName, &s.CreatedAt)
+		panicIf(err)
+		if allStars[s.Keyword] == nil {
+			allStars[s.Keyword] = make([]*Star, 0)
+		}
+		allStars[s.Keyword] = append(allStars[s.Keyword], &s)
+	}
+	rows.Close()
+}
+
+func initializeHandler(w http.ResponseWriter, r *http.Request) {
+	_, err := db.Exec(`DELETE FROM entry WHERE id > 7101`)
+	panicIf(err)
+
+	load()
 
 	_, err = db.Exec("TRUNCATE star")
         panicIf(err)
@@ -248,14 +283,16 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 
 func loginPostHandler(w http.ResponseWriter, r *http.Request) {
 	name := r.FormValue("name")
-	row := db.QueryRow(`SELECT * FROM user WHERE name = ?`, name)
-	user := User{}
-	err := row.Scan(&user.ID, &user.Name, &user.Salt, &user.Password, &user.CreatedAt)
-	if err == sql.ErrNoRows || user.Password != fmt.Sprintf("%x", sha1.Sum([]byte(user.Salt+r.FormValue("password")))) {
+	//row := db.QueryRow(`SELECT * FROM user WHERE name = ?`, name)
+	//user := User{}
+	//err := row.Scan(&user.ID, &user.Name, &user.Salt, &user.Password, &user.CreatedAt)
+	//if err == sql.ErrNoRows || user.Password != fmt.Sprintf("%x", sha1.Sum([]byte(user.Salt+r.FormValue("password")))) {
+	user := allUsers[name]
+	if user == nil || user.Password != fmt.Sprintf("%x", sha1.Sum([]byte(user.Salt+r.FormValue("password")))) {
 		forbidden(w)
 		return
 	}
-	panicIf(err)
+	//panicIf(err)
 	session := getSession(w, r)
 	session.Values["user_id"] = user.ID
 	session.Save(r, w)
@@ -300,10 +337,18 @@ func registerPostHandler(w http.ResponseWriter, r *http.Request) {
 func register(user string, pass string) int64 {
 	salt, err := strrand.RandomString(`....................`)
 	panicIf(err)
+	password := fmt.Sprintf("%x", sha1.Sum([]byte(salt+pass)))
 	res, err := db.Exec(`INSERT INTO user (name, salt, password, created_at) VALUES (?, ?, ?, NOW())`,
-		user, salt, fmt.Sprintf("%x", sha1.Sum([]byte(salt+pass))))
+		user, salt, password)
 	panicIf(err)
 	lastInsertID, _ := res.LastInsertId()
+	allUsers[user] = &User{
+		ID: int(lastInsertID),
+		Name: user,
+		Salt: salt,
+		Password: password,
+		CreatedAt: time.Now(),
+	}
 	return lastInsertID
 }
 
@@ -349,7 +394,6 @@ func keywordByKeywordDeleteHandler(w http.ResponseWriter, r *http.Request) {
 		badRequest(w)
 		return
 	}
-	//row := db.QueryRow(`SELECT * FROM entry WHERE keyword = ?`, keyword)
 	for i, k := range keywords {
 		if k == keyword {
 			copy(keywords[i:], keywords[i+1:])
@@ -357,14 +401,13 @@ func keywordByKeywordDeleteHandler(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
-	//e := Entry{}
-	//err := row.Scan(&e.ID, &e.AuthorID, &e.Keyword, &e.Description, &e.UpdatedAt, &e.CreatedAt)
-	//if err == sql.ErrNoRows {
 	if keywordEntries[keyword] == nil {
 		notFound(w)
 		return
 	}
 	_, err := db.Exec(`DELETE FROM entry WHERE keyword = ?`, keyword)
+	panicIf(err)
+	_, err = db.Exec(`DELETE FROM star WHERE keyword = ?`, keyword)
 	panicIf(err)
 	http.Redirect(w, r, "/", http.StatusFound)
 }
@@ -464,6 +507,7 @@ func main() {
 	}
 	db.Exec("SET SESSION sql_mode='TRADITIONAL,NO_AUTO_VALUE_ON_ZERO,ONLY_FULL_GROUP_BY'")
 	db.Exec("SET NAMES utf8mb4")
+	load()
 
 	isutarEndpoint = os.Getenv("ISUTAR_ORIGIN")
 	if isutarEndpoint == "" {
