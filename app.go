@@ -46,33 +46,29 @@ var (
 	allEntries []*Entry
 	keywordEntries map[string]*Entry
 	keywords []string
+	allStars map[string][]*Star
 )
 
 //star関連
 func starsHandler2(keyword string)[]*Star {
-//      keyword := mux.Vars(r)["keyword"]
-//        keyword := r.FormValue("keyword")
-        rows, err := db.Query(`SELECT * FROM star WHERE keyword = ?`, keyword)
-        if err != nil && err != sql.ErrNoRows {
-                panicIf(err)
-                return make([]*Star, 0);
-        }
-
-        stars := make([]*Star, 0, 10)
-        for rows.Next() {
-                s := Star{}
-                err := rows.Scan(&s.ID, &s.Keyword, &s.UserName, &s.CreatedAt)
-                panicIf(err)
-                stars = append(stars, &s)
-        }
-        rows.Close()
-	return stars
-
-/*
-        re.JSON(w, http.StatusOK, map[string][]Star{
-                "result": stars,
-        })
-*/
+	res := allStars[keyword]
+	return res
+//		
+//        rows, err := db.Query(`SELECT * FROM star WHERE keyword = ?`, keyword)
+//        if err != nil && err != sql.ErrNoRows {
+//                panicIf(err)
+//                return make([]*Star, 0);
+//        }
+//
+//        stars := make([]*Star, 0, 10)
+//        for rows.Next() {
+//                s := Star{}
+//                err := rows.Scan(&s.ID, &s.Keyword, &s.UserName, &s.CreatedAt)
+//                panicIf(err)
+//                stars = append(stars, &s)
+//        }
+//        rows.Close()
+//	return stars
 }
 
 func starsHandler(w http.ResponseWriter, r *http.Request) {
@@ -85,26 +81,21 @@ func starsHandler(w http.ResponseWriter, r *http.Request) {
 
 //star関連
 func starsPostHandler(w http.ResponseWriter, r *http.Request) {
-//      keyword := r.URL.Query().Get("keyword")
         keyword := r.FormValue("keyword")
-
-        origin := os.Getenv("ISUDA_ORIGIN")
-        if origin == "" {
-                origin = "http://localhost:5000"
-        }
-        u, err := r.URL.Parse(fmt.Sprintf("%s/keyword/%s", origin, pathURIEscape(keyword)))
-        panicIf(err)
-        resp, err := http.Get(u.String())
-        panicIf(err)
-        defer resp.Body.Close()
-        if resp.StatusCode >= 400 {
+		if keywordEntries[keyword] == nil {
                 notFound(w)
                 return
         }
 
-//      user := r.URL.Query().Get("user")
         user := r.FormValue("user")
-        _, err = db.Exec(`INSERT INTO star (keyword, user_name, created_at) VALUES (?, ?, NOW())`, keyword, user)
+        res, err := db.Exec(`INSERT INTO star (keyword, user_name, created_at) VALUES (?, ?, NOW())`, keyword, user)
+		id, _ := res.LastInsertId()
+		allStars[keyword] = append(allStars[keyword], &Star{
+			ID: int(id),
+			Keyword: keyword,
+			UserName: user,
+			CreatedAt: time.Now(),
+		})
         panicIf(err)
 
         re.JSON(w, http.StatusOK, map[string]string{"result": "ok"})
@@ -146,6 +137,7 @@ func initializeHandler(w http.ResponseWriter, r *http.Request) {
 //	defer resp.Body.Close()
 
 	rows, _ := db.Query("SELECT * FROM entry ORDER BY updated_at")
+	allStars = make(map[string][]*Star)
 	allEntries = make([]*Entry, 0)
 	keywordEntries = make(map[string]*Entry)
 	keywords = make([]string, 0)
@@ -162,7 +154,6 @@ func initializeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	rows.Close()
 	sort.Sort(Keywords{keywords})
-	//fmt.Printf("%+v\n", keywords)
 
 	_, err = db.Exec("TRUNCATE star")
         panicIf(err)
@@ -264,6 +255,7 @@ func keywordPostHandler(w http.ResponseWriter, r *http.Request) {
 	allEntries = append([]*Entry{&e}, allEntries...)
 	keywordEntries[keyword] = &e
 	keywords = append(keywords, keyword)
+	allStars[keyword] = make([]*Star, 0)
 	sort.Sort(Keywords{keywords})
 	panicIf(err)
 	http.Redirect(w, r, "/", http.StatusFound)
@@ -435,21 +427,6 @@ func htmlify(w http.ResponseWriter, r *http.Request, content string) string {
 
 func loadStars(keyword string) []*Star {
 	return starsHandler2(keyword)
-
-/*
-	v := url.Values{}
-	v.Set("keyword", keyword)
-//	resp, err := http.Get(fmt.Sprintf("%s/stars", isutarEndpoint) + "?" + v.Encode())
-//	panicIf(err)
-//	defer resp.Body.Close()
-
-	var data struct {
-		Result []*Star `json:result`
-	}
-	err = json.NewDecoder(resp.Body).Decode(&data)
-	panicIf(err)
-	return data.Result
-*/
 }
 
 func isSpamContents(content string) bool {
