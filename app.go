@@ -1,7 +1,6 @@
 package main
 
 import (
-	"net"
 	"time"
 	"context"
 	"crypto/sha1"
@@ -578,7 +577,7 @@ func main() {
         s.Methods("POST").HandlerFunc(myHandler(starsPostHandler))
 
 	r.PathPrefix("/").Handler(http.FileServer(http.Dir("./public/")))
-	app, _ := net.Listen("unix", "/var/run/isuda.sock")
-	log.Fatal(http.Serve(app, r))
-	//log.Fatal(http.ListenAndServe(":5000", r))
+	//app, _ := net.Listen("unix", "/var/run/isuda.sock")
+	//log.Fatal(http.Serve(app, r))
+	log.Fatal(http.ListenAndServe(":5000", r))
 }
